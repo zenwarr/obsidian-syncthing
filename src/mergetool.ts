@@ -1,71 +1,80 @@
 import * as child_process from 'child_process';
+import * as path from "path";
+import {FileSystemAdapter, Vault} from 'obsidian';
 
 
 export interface MergeTool {
-	run(originalFile: string, conflictFile: string): Promise<void>;
+	merge(latestFile: string, conflictFile: string): Promise<void>;
 }
 
 
-export abstract class ChildProcessMergeTool {
-	protected abstract getExecFile(): string;
+type execArguments = [program: string, args: string[]];
 
-	protected abstract getExecArguments(originalFile: string, conflictFile: string): string[];
+export abstract class ChildProcessMergeTool implements MergeTool {
+	protected abstract getExecArguments(latestFile: string, conflictFile: string): execArguments;
 
-	run(originalFile: string, conflictFile: string): Promise<void> {
+	merge(latestFile: string, conflictFile: string): Promise<void> {
 		return new Promise((resolve, reject) => {
-			child_process.execFile(
-				this.getExecFile(),
-				this.getExecArguments(originalFile, conflictFile),
-				(error, stdout, stderr) => {
-					if (error != null) {
-						reject(error);
-						return;
-					}
+			const [file, args] = this.getExecArguments(latestFile, conflictFile);
 
-					if (stdout) {
-						console.log(stdout)
-					}
+			const proc = child_process.execFile(file, args,);
 
-					if (stderr) {
-						console.error(stderr)
-					}
-
-					resolve();
+			proc.on("error", reject);
+			proc.on("exit", code => {
+				if (code !== 0) {
+					reject(new Error(`Merge tool exited with code ${code}`))
+					return
 				}
-			)
+
+				resolve();
+			});
 		})
 	}
 }
 
 
 export class GolandMergeTool extends ChildProcessMergeTool {
-	protected getExecFile(): string {
-		return "goland";
-	}
-
-	protected getExecArguments(originalFile: string, conflictFile: string): string[] {
-		return ["merge", conflictFile, originalFile, originalFile, "--wait"];
+	protected override getExecArguments(latestFile: string, conflictFile: string) {
+		return ["writerside", ["merge", latestFile, conflictFile, latestFile, "--wait"]] as execArguments;
 	}
 }
 
 
 export class SublimeMergeMergeTool extends ChildProcessMergeTool {
-	protected getExecFile(): string {
-		return "smerge";
-	}
-
-	protected getExecArguments(originalFile: string, conflictFile: string): string[] {
-		return ["mergetool", originalFile, conflictFile, "-o", conflictFile];
+	protected override getExecArguments(latestFile: string, conflictFile: string) {
+		return ["smerge", ["mergetool", latestFile, conflictFile, "-o", latestFile]] as execArguments;
 	}
 }
 
 
 export class MeldMergeTool extends ChildProcessMergeTool {
-	protected getExecFile(): string {
-		return "meld";
+	protected override getExecArguments(latestFile: string, conflictFile: string) {
+		return ["meld", [conflictFile, latestFile]] as execArguments;
+	}
+}
+
+export async function runMergeTool(vault: Vault, mergeTool: string, latestFile: string, conflictFile: string): Promise<void> {
+	const adapter = vault.adapter;
+	if (!(adapter instanceof FileSystemAdapter)) {
+		console.error("Cannot resolve conflicts for non-filesystem vaults");
+		return;
 	}
 
-	protected getExecArguments(originalFile: string, conflictFile: string): string[] {
-		return [originalFile, conflictFile];
+	const vaultPath = adapter.getBasePath();
+	const latestPath = path.join(vaultPath, latestFile);
+	const conflictPath = path.join(vaultPath, conflictFile);
+
+	switch (mergeTool) {
+		case "smerge":
+			return new SublimeMergeMergeTool().merge(latestPath, conflictPath);
+
+		case "goland":
+			return new GolandMergeTool().merge(latestPath, conflictPath);
+
+		case "meld":
+			return new MeldMergeTool().merge(latestPath, conflictPath);
+
+		default:
+			throw new Error(`Unknown merge tool: ${mergeTool}`);
 	}
 }
