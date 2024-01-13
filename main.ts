@@ -1,21 +1,17 @@
-import {App, ButtonComponent, FileView, Menu, Modal, Notice, Plugin, TFile, View, WorkspaceLeaf} from 'obsidian';
-import {ConflictGroup, getAllConflictGroups, getConflictGroupForFile, getConflictGroupLatestFile} from 'src/files';
-import {runMergeTool} from "./src/mergetool";
-import {SettingsTab} from "./src/settings";
-import {format, formatDistance} from "date-fns";
-
-interface PluginSettings {
-	mergeTool: string;
-	customMergeTool?: string;
-}
+import {addIcon, FileView, Menu, Notice, Plugin, TFile, WorkspaceLeaf} from 'obsidian';
+import {ConflictGroup, getConflictGroupForFile, getConflictGroupLatestFile} from 'src/files';
+import {PluginSettings, SettingsTab} from "./src/settings";
+import {ConflictResolveModal} from "./src/conflictResolveModal";
+import {VaultConflictsModal} from "./src/vaultConflictsModal";
+import {syncthingLogo} from "./src/logo";
 
 const DEFAULT_SETTINGS: PluginSettings = {
 	mergeTool: "meld",
+	customMergeToolWaits: true,
 }
 
-export default class MyPlugin extends Plugin {
+export default class SyncthingPlugin extends Plugin {
 	settings: PluginSettings;
-	conflictCountStatus: HTMLElement;
 	onFileOpenBound: (file: TFile | null) => void;
 	onFileChangedBound: (file: TFile) => void;
 	onFileRenamedBound: (file: TFile, oldPath: string) => void;
@@ -23,7 +19,7 @@ export default class MyPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		this.conflictCountStatus = this.addStatusBarItem();
+		addIcon("syncthing-logo", syncthingLogo);
 
 		this.addCommand({
 			id: 'show-conflicts',
@@ -45,9 +41,9 @@ export default class MyPlugin extends Plugin {
 
 			menu.addItem((item) => {
 				item.setTitle("Show conflicts");
-				item.setIcon("arrow-up-down");
+				item.setIcon("syncthing-logo");
 				item.onClick(() => {
-					new ConflictResolveModal(this.app, group, this.settings.mergeTool).open();
+					new ConflictResolveModal(this.app, group, this.settings).open();
 				});
 			});
 		}
@@ -68,7 +64,7 @@ export default class MyPlugin extends Plugin {
 				new VaultConflictsModal(this.app, this.app.vault, this.settings.mergeTool).open();
 			}
 		});
-		this.addRibbonIcon("arrow-up-down", "Show all conflicts in the vault", () => {
+		this.addRibbonIcon("syncthing-logo", "Show all conflicts in the vault", () => {
 			new VaultConflictsModal(this.app, this.app.vault, this.settings.mergeTool).open();
 		});
 
@@ -115,7 +111,7 @@ export default class MyPlugin extends Plugin {
 			return;
 		}
 
-		new ConflictResolveModal(this.app, group, this.settings.mergeTool).open();
+		new ConflictResolveModal(this.app, group, this.settings).open();
 	}
 
 	onFileOpen(file: TFile | null) {
@@ -187,123 +183,5 @@ export default class MyPlugin extends Plugin {
 		});
 
 		return foundLeafs;
-	}
-}
-
-
-function formatConflictTime(time: Date): string {
-	const abs = format(time, "yyyy-MM-dd HH:mm:ss");
-	const rel = formatDistance(time, new Date(), {addSuffix: true});
-	return `${abs} (${rel})`;
-}
-
-class ConflictResolveModal extends Modal {
-	private conflict: ConflictGroup;
-	private mergeTool: string;
-	private conflictingFilesLeft: number;
-
-	constructor(app: App, conflict: ConflictGroup, mergeTool: string) {
-		super(app)
-		this.conflict = conflict;
-		this.conflictingFilesLeft = conflict.conflicts.length;
-		this.mergeTool = mergeTool;
-		this.titleEl.setText(`Conflicts for ${conflict.latestPath}`);
-	}
-
-	onOpen() {
-		const deleteConflictingFile = async (file: TFile, div: HTMLElement) => {
-			await this.app.vault.delete(file);
-			div.remove();
-
-			this.conflictingFilesLeft--;
-			if (this.conflictingFilesLeft === 0) {
-				this.close();
-			}
-		}
-
-		for (const conflict of this.conflict.conflicts) {
-			const conflictContainer = this.contentEl.createDiv({cls: "syncthing-conflict"});
-			const info = conflictContainer.createDiv({cls: "syncthing-conflict__info"});
-			info.createDiv({text: conflict.file.path, cls: "syncthing-conflict__path"});
-			info.createDiv({text: formatConflictTime(conflict.name.date), cls: "syncthing-conflict__date"});
-
-			const buttonContainer = conflictContainer.createDiv({cls: "syncthing-conflict__buttons"});
-			conflictContainer.appendChild(buttonContainer);
-
-			new ButtonComponent(buttonContainer).setButtonText("Merge").onClick(async () => {
-				try {
-					await runMergeTool(this.app.vault, this.mergeTool, this.conflict.latestPath, conflict.file.path);
-
-					if (confirm("Delete the conflicting file?")) {
-						await deleteConflictingFile(conflict.file, conflictContainer);
-					}
-				} catch (err) {
-					console.error(err);
-					new Notice("Merge tool run failed: " + err.message);
-				}
-			}).setClass("mod-cta");
-
-			new ButtonComponent(buttonContainer).setButtonText("Delete").onClick(async () => {
-				if (confirm("Delete the conflicting file?")) {
-					await deleteConflictingFile(conflict.file, conflictContainer);
-				}
-			}).setClass("mod-warning");
-
-			this.contentEl.appendChild(conflictContainer);
-		}
-	}
-}
-
-
-interface ExplorerView extends View {
-	revealInFolder(file: TFile): void;
-}
-
-class VaultConflictsModal extends Modal {
-	private vault: any;
-	private mergeTool: string;
-
-	constructor(app: App, vault: any, mergeTool: string) {
-		super(app)
-		this.vault = vault;
-		this.mergeTool = mergeTool;
-		this.titleEl.setText("Vault conflicts");
-	}
-
-	onOpen() {
-		const groups = getAllConflictGroups(this.vault);
-		for (const group of groups.values()) {
-			const groupContainer = this.contentEl.createDiv({cls: "syncthing-conflict-group"});
-
-			const info = groupContainer.createDiv({cls: "syncthing-conflict-group__info"});
-			info.createDiv({cls: "syncthing-conflict-group__path", text: group.latestPath});
-			info.createDiv({
-				cls: "syncthing-conflict-group__count",
-				text: group.conflicts.length + " conflicts"
-			});
-
-			const buttonContainer = groupContainer.createDiv();
-			buttonContainer.addClass("syncthing-conflict-group__button");
-			groupContainer.appendChild(buttonContainer);
-
-			new ButtonComponent(buttonContainer).setButtonText("Show").onClick(async () => {
-				if (!group.latest) {
-					return;
-				}
-
-				this.close();
-
-				const fileExplorer = this.app.workspace.getLeavesOfType("file-explorer");
-				for (const leaf of fileExplorer) {
-					const view: ExplorerView = leaf.view as ExplorerView;
-					view.revealInFolder(group.latest);
-				}
-
-				// const newLeaf = this.app.workspace.getLeaf(true);
-				// await newLeaf.openFile(group.latest);
-			});
-
-			this.contentEl.appendChild(groupContainer);
-		}
 	}
 }

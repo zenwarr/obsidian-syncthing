@@ -1,10 +1,16 @@
 import {App, PluginSettingTab, Setting} from "obsidian";
-import MyPlugin from "../main";
+import SyncthingPlugin from "../main";
+
+export interface PluginSettings {
+	mergeTool: string;
+	customMergeTool?: string;
+	customMergeToolWaits: boolean;
+}
 
 export class SettingsTab extends PluginSettingTab {
-	plugin: MyPlugin;
+	plugin: SyncthingPlugin;
 
-	constructor(app: App, plugin: MyPlugin) {
+	constructor(app: App, plugin: SyncthingPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -18,8 +24,8 @@ export class SettingsTab extends PluginSettingTab {
 			.setName('Merge tool')
 			.addDropdown(dropdown => {
 				dropdown.addOption("smerge", "Sublime Merge");
-				dropdown.addOption("goland", "GoLand");
 				dropdown.addOption("meld", "Meld");
+				dropdown.addOption("custom", "Custom");
 				dropdown.setValue(this.plugin.settings.mergeTool);
 				dropdown.onChange(async (value) => {
 					this.plugin.settings.mergeTool = value;
@@ -39,6 +45,18 @@ export class SettingsTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				});
 				return text
+			})
+
+		new Setting(containerEl)
+			.setName('Custom merge tool waits')
+			.setDesc('If your custom merge tool waits for the merge to be finished before exiting, enable this option.')
+			.addToggle(toggle => {
+				toggle.setValue(this.plugin.settings.customMergeToolWaits);
+				toggle.onChange(async (value) => {
+					this.plugin.settings.customMergeToolWaits = value;
+					await this.plugin.saveSettings();
+				});
+				return toggle
 			})
 	}
 }
