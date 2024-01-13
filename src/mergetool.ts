@@ -1,8 +1,9 @@
 import * as child_process from 'child_process';
 import * as path from "path";
 import * as process from "process"
-import {FileSystemAdapter, Vault} from 'obsidian';
+import {App, FileSystemAdapter, TFile} from 'obsidian';
 import {PluginSettings} from "./settings";
+import {MergeView} from "./mergeView";
 
 
 export interface MergeTool {
@@ -82,8 +83,44 @@ export class CustomMergeTool extends ChildProcessMergeTool {
 }
 
 
-export async function runMergeTool(vault: Vault, settings: PluginSettings, latestFile: string, conflictFile: string): Promise<void> {
-	const adapter = vault.adapter;
+export class InternalMergeTool implements MergeTool {
+	private app: App;
+
+	constructor(app: App) {
+		this.app = app;
+	}
+
+	private getFile(path: string): TFile | null {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!file || !(file instanceof TFile)) {
+			return null;
+		}
+
+		return file;
+	}
+
+	async merge(latestFile: string, conflictFile: string): Promise<void> {
+		const leaf = this.app.workspace.getLeaf(true);
+
+		const base = this.getFile(latestFile);
+		if (!base) {
+			throw new Error(`Could not find base file: ${latestFile}`)
+		}
+
+		const conflict = this.getFile(conflictFile);
+		if (!conflict) {
+			throw new Error(`Could not find conflict file: ${conflictFile}`)
+		}
+
+		const view = new MergeView(leaf, base, conflict);
+		await leaf.open(view);
+		this.app.workspace.setActiveLeaf(leaf)
+	}
+}
+
+
+export async function runMergeTool(app: App, settings: PluginSettings, latestFile: string, conflictFile: string): Promise<void> {
+	const adapter = app.vault.adapter;
 	if (!(adapter instanceof FileSystemAdapter)) {
 		console.error("Cannot resolve conflicts for non-filesystem vaults");
 		return;
@@ -94,6 +131,9 @@ export async function runMergeTool(vault: Vault, settings: PluginSettings, lates
 	const conflictPath = path.join(vaultPath, conflictFile);
 
 	switch (settings.mergeTool) {
+		case "internal":
+			return new InternalMergeTool(app).merge(latestFile, conflictFile);
+
 		case "smerge":
 			return new SublimeMergeMergeTool().merge(latestPath, conflictPath);
 

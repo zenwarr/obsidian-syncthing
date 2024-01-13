@@ -44,9 +44,6 @@ export class VaultConflictsModal extends Modal {
 					const view: ExplorerView = leaf.view as ExplorerView;
 					view.revealInFolder(group.latest);
 				}
-
-				// const newLeaf = this.app.workspace.getLeaf(true);
-				// await newLeaf.openFile(group.latest);
 			});
 
 			this.contentEl.appendChild(groupContainer);

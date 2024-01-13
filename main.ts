@@ -4,6 +4,7 @@ import {PluginSettings, SettingsTab} from "./src/settings";
 import {ConflictResolveModal} from "./src/conflictResolveModal";
 import {VaultConflictsModal} from "./src/vaultConflictsModal";
 import {syncthingLogo} from "./src/logo";
+import {MERGE_VIEW} from "./src/mergeView";
 
 const DEFAULT_SETTINGS: PluginSettings = {
 	mergeTool: "meld",
@@ -88,6 +89,8 @@ export default class SyncthingPlugin extends Plugin {
 		this.app.vault.off("create", this.onFileChangedBound);
 		this.app.vault.off("delete", this.onFileChangedBound);
 		this.app.vault.off("rename", this.onFileRenamedBound);
+
+		this.app.workspace.detachLeavesOfType(MERGE_VIEW);
 	}
 
 	async loadSettings() {

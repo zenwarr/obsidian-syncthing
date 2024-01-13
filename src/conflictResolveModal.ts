@@ -39,7 +39,13 @@ export class ConflictResolveModal extends Modal {
 
 			new ButtonComponent(buttonContainer).setButtonText("Merge").onClick(async () => {
 				try {
-					await runMergeTool(this.app.vault, this.settings, this.conflict.latestPath, conflict.file.path);
+					await runMergeTool(this.app, this.settings, this.conflict.latestPath, conflict.file.path);
+
+					if (this.settings.mergeTool === "internal") {
+						this.close();
+						return;
+					}
+
 					const toolWaits = this.settings.mergeTool !== "custom" || this.settings.customMergeToolWaits;
 
 					if (toolWaits && confirm("Delete the conflicting file?")) {

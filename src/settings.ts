@@ -25,6 +25,7 @@ export class SettingsTab extends PluginSettingTab {
 			.addDropdown(dropdown => {
 				dropdown.addOption("smerge", "Sublime Merge");
 				dropdown.addOption("meld", "Meld");
+				dropdown.addOption("internal", "Internal");
 				dropdown.addOption("custom", "Custom");
 				dropdown.setValue(this.plugin.settings.mergeTool);
 				dropdown.onChange(async (value) => {
